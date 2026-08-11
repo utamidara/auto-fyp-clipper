@@ -24,43 +24,49 @@ if st.button("🚀 Analisis & Potong Otomatis", use_container_width=True):
         if os.path.exists(output_file):
             os.remove(output_file)
 
-        with st.spinner("⏳ Sedang mengambil URL video dan memproses pemotongan..."):
+        with st.spinner("⏳ Sedang mengunduh dan memproses video..."):
             try:
-                # 1. Ambil direct URL video menggunakan yt_dlp
+                # Opsi yt-dlp yang kompatibel dengan Server Cloud
                 ydl_opts = {
-                    'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                    'format': 'best[ext=mp4]/best', # Ambil format mp4 langsung agar tidak gagal gabung
                     'quiet': True,
                     'no_warnings': True,
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 }
                 
+                direct_url = None
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=False)
-                    direct_url = info.get('url')
+                    
+                    # Ambil URL media langsung
+                    if 'url' in info:
+                        direct_url = info['url']
+                    elif 'requested_formats' in info:
+                        direct_url = info['requested_formats'][0]['url']
 
                 if not direct_url:
-                    st.error("Gagal mendapatkan link media dari URL yang diberikan.")
+                    st.error("Gagal mengekstrak link media. Pastikan video publik dan link valid.")
                 else:
-                    # 2. Potong video langsung menggunakan ffmpeg
+                    # Potong langsung aliran video (stream) menggunakan FFmpeg
                     ffmpeg_cmd = [
                         'ffmpeg',
-                        '-y',                   # Timpa file jika sudah ada
-                        '-ss', '00:00:00',      # Detik mulai (0)
-                        '-i', direct_url,       # Input stream URL
-                        '-t', str(duration),    # Durasi pemotongan
-                        '-c', 'copy',           # Copy stream tanpa re-encode (proses sangat cepat)
+                        '-y',
+                        '-ss', '00:00:00',
+                        '-i', direct_url,
+                        '-t', str(duration),
+                        '-c', 'copy',
                         output_file
                     ]
 
-                    # Jalankan perintah ffmpeg
                     result = subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
                     if result.returncode == 0 and os.path.exists(output_file):
                         st.success("🎉 Video berhasil dipotong!")
                         
-                        # 3. Tampilkan Video Player
+                        # Tampilkan Video
                         st.video(output_file)
                         
-                        # 4. Tombol Download
+                        # Tombol Download
                         with open(output_file, "rb") as file:
                             st.download_button(
                                 label="📥 Download Hasil Klip",
@@ -70,7 +76,7 @@ if st.button("🚀 Analisis & Potong Otomatis", use_container_width=True):
                                 use_container_width=True
                             )
                     else:
-                        st.error(f"Gagal memotong video: {result.stderr}")
+                        st.error(f"Gagal memotong video via FFmpeg: {result.stderr}")
 
             except Exception as e:
                 st.error(f"Terjadi kesalahan: {str(e)}")
