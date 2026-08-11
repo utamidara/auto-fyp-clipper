@@ -10,25 +10,23 @@ from google import genai
 st.set_page_config(page_title="Auto FYP Clipper AI", page_icon="⚡", layout="centered")
 
 st.title("⚡ Auto FYP Clipper (Powered by Gemini AI)")
-st.write("Cari adegan paling seru/viral secara otomatis menggunakan AI!")
+st.write("Masukkan link video TikTok / YouTube untuk dipotong adegan paling viralnya secara otomatis!")
 
-# Input API Key & URL
-api_key = st.text_input("🔑 Masukkan Gemini API Key Kamu:", type="password")
+# Mengambil API Key secara aman dari Streamlit Secrets
+api_key = st.secrets.get("GEMINI_API_KEY")
+
+# Form Input Link & Durasi
 url = st.text_input("URL Video (YouTube / TikTok):", placeholder="https://www.youtube.com/watch?v=...")
-
-# Option Durasi Target
 duration_target = st.slider("Target Durasi Klip (Detik):", min_value=10, max_value=60, value=30)
 
 output_file = "output_clip.mp4"
 
 def get_youtube_id(url):
-    """Mengekstrak Video ID dari URL YouTube"""
     pattern = r"(?:v=|\/)([0-9A-Za-z_-]{11})"
     match = re.search(pattern, url)
     return match.group(1) if match else None
 
 def get_transcript_text(video_id):
-    """Mengambil transkrip teks beserta timestamp-nya"""
     try:
         transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en'])
         full_text_with_time = []
@@ -37,16 +35,15 @@ def get_transcript_text(video_id):
             text = item['text']
             full_text_with_time.append(f"[{start}s] {text}")
         return "\n".join(full_text_with_time)
-    except Exception as e:
+    except Exception:
         return None
 
 if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
     if not api_key:
-        st.warning("Silakan masukkan Gemini API Key kamu terlebih dahulu!")
+        st.error("🔑 API Key belum dipasang di Streamlit Secrets! Silakan atur Secrets terlebih dahulu.")
     elif not url:
         st.warning("Silakan masukkan URL Video terlebih dahulu!")
     else:
-        # Hapus file lama jika ada
         if os.path.exists(output_file):
             os.remove(output_file)
 
@@ -59,9 +56,8 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
 
                 start_time = 0
 
-                # Jika transkrip ditemukan, minta Gemini AI cari detik paling viral
                 if transcript_data:
-                    st.info("📜 Transkrip ditemukan! Gemini AI sedang mencari adegan paling seru/viral...")
+                    st.info("📜 Transkrip ditemukan! Gemini AI sedang menganalisis adegan paling seru...")
                     
                     client = genai.Client(api_key=api_key)
                     
@@ -70,7 +66,7 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
                     Tugasmu adalah menganalisis teks ini dan menemukan 1 adegan paling menarik, memicu rasa penasaran (hook), lucu, atau dramatis yang cocok untuk video pendek (TikTok/Reels/Shorts) dengan target durasi sekitar {duration_target} detik.
 
                     Transkrip:
-                    {transcript_data[:10000]}  # Batasi 10rb karakter pertama
+                    {transcript_data[:10000]}
 
                     Kembalikan HANYA format JSON valid berikut tanpa teks tambahan/markdown lain:
                     {{"start_seconds": 12, "reason": "Penjelasan singkat alasan bagian ini menarik"}}
@@ -81,7 +77,6 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
                         contents=prompt,
                     )
                     
-                    # Bersihkan response jika ada penanda markdown json
                     clean_res = response.text.replace("```json", "").replace("```", "").strip()
                     ai_result = json.loads(clean_res)
                     
@@ -91,7 +86,6 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
                 else:
                     st.warning("⚠️ Transkrip teks tidak ditemukan pada video ini. Menggunakan pemotongan dari awal video.")
 
-                # Mengambil direct URL media via yt-dlp
                 st.info("⚡ Memproses pengunduhan dan pemotongan video...")
                 ydl_opts = {
                     'format': 'best[ext=mp4]/best',
@@ -111,7 +105,6 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
                 if not direct_url:
                     st.error("Gagal mendapatkan link media dari URL yang diberikan.")
                 else:
-                    # Potong dengan FFmpeg berdasarkan timestamp hasil AI
                     ffmpeg_cmd = [
                         'ffmpeg',
                         '-y',
@@ -127,10 +120,8 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
                     if result.returncode == 0 and os.path.exists(output_file):
                         st.success("🎉 Video adegan viral berhasil dipotong oleh AI!")
                         
-                        # Tampilkan Video
                         st.video(output_file)
                         
-                        # Tombol Download
                         with open(output_file, "rb") as file:
                             st.download_button(
                                 label="📥 Download Hasil Klip AI",
