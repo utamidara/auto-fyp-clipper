@@ -4,19 +4,21 @@ import json
 import subprocess
 import streamlit as st
 import yt_dlp
+from googleapiclient.discovery import build
 from youtube_transcript_api import YouTubeTranscriptApi
 from google import genai
 
 st.set_page_config(page_title="Auto FYP Clipper AI", page_icon="⚡", layout="centered")
 
-st.title("⚡ Auto FYP Clipper (Powered by Gemini AI)")
-st.write("Masukkan link video TikTok / YouTube untuk dipotong adegan paling viralnya secara otomatis!")
+st.title("⚡ Auto FYP Clipper (Powered by Gemini & YouTube API)")
+st.write("Masukkan link video YouTube untuk dipotong adegan paling viralnya secara otomatis!")
 
-# Mengambil API Key dari Streamlit Secrets
-api_key = st.secrets.get("GEMINI_API_KEY")
+# Mengambil kedua API Key dari Streamlit Secrets secara aman
+gemini_api_key = st.secrets.get("GEMINI_API_KEY")
+youtube_api_key = st.secrets.get("YOUTUBE_API_KEY")
 
 # Form Input Link & Durasi
-url = st.text_input("URL Video (YouTube / TikTok):", placeholder="https://www.youtube.com/watch?v=...")
+url = st.text_input("URL Video YouTube:", placeholder="https://www.youtube.com/watch?v=...")
 duration_target = st.slider("Target Durasi Klip (Detik):", min_value=10, max_value=60, value=30)
 
 temp_raw_file = "raw_video.mp4"
@@ -27,7 +29,21 @@ def get_youtube_id(url):
     match = re.search(pattern, url)
     return match.group(1) if match else None
 
+def get_video_info_from_api(video_id, api_key):
+    """Mengambil judul & deskripsi resmi dari YouTube Data API v3"""
+    try:
+        youtube = build("youtube", "v3", developerKey=api_key)
+        request = youtube.videos().list(part="snippet", id=video_id)
+        response = request.execute()
+        if response.get("items"):
+            snippet = response["items"][0]["snippet"]
+            return snippet.get("title", ""), snippet.get("description", "")
+    except Exception as e:
+        st.warning(f"YouTube API Warning: {e}")
+    return "", ""
+
 def get_transcript_text(video_id):
+    """Mengambil transkrip teks beserta timestamp-nya"""
     try:
         transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en'])
         full_text_with_time = []
@@ -40,8 +56,8 @@ def get_transcript_text(video_id):
         return None
 
 if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
-    if not api_key:
-        st.error("🔑 API Key belum dipasang di Streamlit Secrets!")
+    if not gemini_api_key or not youtube_api_key:
+        st.error("🔑 API Key Gemini atau YouTube belum dipasang lengkap di Streamlit Secrets!")
     elif not url:
         st.warning("Silakan masukkan URL Video terlebih dahulu!")
     else:
@@ -50,54 +66,63 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
             if os.path.exists(f):
                 os.remove(f)
 
-        with st.spinner("⏳ Menganalisis transkrip video menggunakan Gemini AI..."):
+        with st.spinner("⏳ Menganalisis metadata & transkrip video menggunakan Gemini AI..."):
             try:
                 video_id = get_youtube_id(url)
-                transcript_data = None
-                if video_id:
-                    transcript_data = get_transcript_text(video_id)
+                if not video_id:
+                    st.error("URL YouTube tidak valid!")
+                    st.stop()
 
+                # 1. Panggil YouTube Data API v3 untuk mengambil metadata resmi
+                title, description = get_video_info_from_api(video_id, youtube_api_key)
+                if title:
+                    st.info(f"📌 **Judul Video:** {title}")
+
+                # 2. Ambil Transkrip Subtitle
+                transcript_data = get_transcript_text(video_id)
                 start_time = 0
 
-                if transcript_data:
-                    st.info("📜 Transkrip ditemukan! Gemini AI sedang menganalisis adegan paling seru...")
-                    
-                    client = genai.Client(api_key=api_key)
-                    
-                    prompt = f"""
-                    Berikut adalah transkrip video beserta timestamp detik.
-                    Tugasmu adalah menganalisis teks ini dan menemukan 1 adegan paling menarik, memicu rasa penasaran (hook), lucu, atau dramatis yang cocok untuk video pendek (TikTok/Reels/Shorts) dengan target durasi sekitar {duration_target} detik.
-
-                    Transkrip:
-                    {transcript_data[:10000]}
-
-                    Kembalikan HANYA format JSON valid berikut tanpa teks tambahan/markdown lain:
-                    {{"start_seconds": 12, "reason": "Penjelasan singkat alasan bagian ini menarik"}}
-                    """
-
-                    response = client.models.generate_content(
-                        model='gemini-2.5-flash',
-                        contents=prompt,
-                    )
-                    
-                    clean_res = response.text.replace("```json", "").replace("```", "").strip()
-                    ai_result = json.loads(clean_res)
-                    
-                    start_time = ai_result.get("start_seconds", 0)
-                    reason = ai_result.get("reason", "Adegan pilihan AI")
-                    st.success(f"🎯 **AI Highlight:** {reason} (Mulai detik ke-{start_time})")
-                else:
-                    st.warning("⚠️ Transkrip teks tidak ditemukan pada video ini. Menggunakan pemotongan dari awal video.")
-
-                st.info("⚡ Mengunduh video ke server (Bypass Cloud Protection)...")
+                # 3. Analisis Gemini AI
+                client = genai.Client(api_key=gemini_api_key)
                 
-                # Konfigurasi yt-dlp khusus bypass IP Cloud / 403 Forbidden
+                content_to_analyze = ""
+                if transcript_data:
+                    content_to_analyze = f"Transkrip:\n{transcript_data[:10000]}"
+                    st.info("📜 Subtitle/Transkrip ditemukan! Gemini AI sedang mencari detik adegan paling seru...")
+                else:
+                    content_to_analyze = f"Judul: {title}\nDeskripsi: {description}"
+                    st.warning("⚠️ Transkrip tidak tersedia. Gemini AI menganalisis dari Judul & Deskripsi video...")
+
+                prompt = f"""
+                Berikut adalah data video YouTube.
+                Tugasmu adalah menganalisis teks ini dan menentukan 1 adegan paling menarik, memicu rasa penasaran (hook), atau dramatis yang cocok untuk video pendek (TikTok/Reels/Shorts) dengan target durasi sekitar {duration_target} detik.
+
+                {content_to_analyze}
+
+                Kembalikan HANYA format JSON valid berikut tanpa teks tambahan/markdown lain:
+                {{"start_seconds": 12, "reason": "Penjelasan singkat alasan bagian ini menarik"}}
+                """
+
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=prompt,
+                )
+                
+                clean_res = response.text.replace("```json", "").replace("```", "").strip()
+                ai_result = json.loads(clean_res)
+                
+                start_time = ai_result.get("start_seconds", 0)
+                reason = ai_result.get("reason", "Adegan pilihan AI")
+                st.success(f"🎯 **AI Highlight:** {reason} (Mulai detik ke-{start_time})")
+
+                # 4. Pengunduhan & Pemotongan Video
+                st.info("⚡ Mengunduh & memotong klip video...")
+                
                 ydl_opts = {
                     'format': 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
                     'outtmpl': temp_raw_file,
                     'quiet': True,
                     'no_warnings': True,
-                    # Memaksa yt-dlp menyamar sebagai Klien Android/iOS agar lolos dari blokir Cloud
                     'extractor_args': {
                         'youtube': {
                             'player_client': ['android', 'ios', 'web'],
@@ -106,8 +131,6 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
                     },
                     'http_headers': {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                        'Accept-Language': 'en-us,en;q=0.5',
                     }
                 }
                 
@@ -115,10 +138,8 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
                     ydl.download([url])
 
                 if not os.path.exists(temp_raw_file):
-                    st.error("Gagal mengunduh video. YouTube masih memblokir akses dari server ini.")
+                    st.error("Gagal mengunduh file video.")
                 else:
-                    st.info("✂️ Memotong video lokal dengan FFmpeg...")
-                    
                     ffmpeg_cmd = [
                         'ffmpeg',
                         '-y',
