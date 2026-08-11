@@ -1,4 +1,5 @@
 streamlit
 yt-dlp>=2024.08.06
 google-genai
+google-api-python-client
 youtube-transcript-api
