@@ -19,6 +19,7 @@ api_key = st.secrets.get("GEMINI_API_KEY")
 url = st.text_input("URL Video (YouTube / TikTok):", placeholder="https://www.youtube.com/watch?v=...")
 duration_target = st.slider("Target Durasi Klip (Detik):", min_value=10, max_value=60, value=30)
 
+temp_raw_file = "raw_video.mp4"
 output_file = "output_clip.mp4"
 
 def get_youtube_id(url):
@@ -40,12 +41,14 @@ def get_transcript_text(video_id):
 
 if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
     if not api_key:
-        st.error("🔑 API Key belum dipasang di Streamlit Secrets! Silakan atur Secrets terlebih dahulu.")
+        st.error("🔑 API Key belum dipasang di Streamlit Secrets!")
     elif not url:
         st.warning("Silakan masukkan URL Video terlebih dahulu!")
     else:
-        if os.path.exists(output_file):
-            os.remove(output_file)
+        # Pembersihan file lama
+        for f in [temp_raw_file, output_file]:
+            if os.path.exists(f):
+                os.remove(f)
 
         with st.spinner("⏳ Menganalisis transkrip video menggunakan Gemini AI..."):
             try:
@@ -86,35 +89,33 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
                 else:
                     st.warning("⚠️ Transkrip teks tidak ditemukan pada video ini. Menggunakan pemotongan dari awal video.")
 
-                st.info("⚡ Memproses pengunduhan dan pemotongan video...")
+                st.info("⚡ Mengunduh video ke server lokal...")
                 
                 user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 
+                # Opsi yt-dlp untuk mendownload langsung ke file lokal di server
                 ydl_opts = {
                     'format': 'best[ext=mp4]/best',
+                    'outtmpl': temp_raw_file,
                     'quiet': True,
                     'no_warnings': True,
                     'user_agent': user_agent,
                 }
                 
-                direct_url = None
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                    if 'url' in info:
-                        direct_url = info['url']
-                    elif 'requested_formats' in info:
-                        direct_url = info['requested_formats'][0]['url']
+                    ydl.download([url])
 
-                if not direct_url:
-                    st.error("Gagal mendapatkan link media dari URL yang diberikan.")
+                if not os.path.exists(temp_raw_file):
+                    st.error("Gagal mengunduh file video dari URL tersebut.")
                 else:
-                    # Menambahkan -headers User-Agent agar FFmpeg tidak di-block 403 oleh YouTube
+                    st.info("✂️ Memotong video lokal dengan FFmpeg...")
+                    
+                    # Potong dari file video yang sudah terunduh di server lokal
                     ffmpeg_cmd = [
                         'ffmpeg',
                         '-y',
-                        '-headers', f'User-Agent: {user_agent}\r\n',
                         '-ss', str(start_time),
-                        '-i', direct_url,
+                        '-i', temp_raw_file,
                         '-t', str(duration_target),
                         '-c', 'copy',
                         output_file
@@ -140,3 +141,7 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
 
             except Exception as e:
                 st.error(f"Terjadi kesalahan: {str(e)}")
+            finally:
+                # Bersihkan file video mentah agar memori server hemat
+                if os.path.exists(temp_raw_file):
+                    os.remove(temp_raw_file)
