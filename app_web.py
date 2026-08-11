@@ -45,7 +45,7 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
     elif not url:
         st.warning("Silakan masukkan URL Video terlebih dahulu!")
     else:
-        # Pembersihan file lama
+        # Bersihkan file lama
         for f in [temp_raw_file, output_file]:
             if os.path.exists(f):
                 os.remove(f)
@@ -89,28 +89,36 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
                 else:
                     st.warning("⚠️ Transkrip teks tidak ditemukan pada video ini. Menggunakan pemotongan dari awal video.")
 
-                st.info("⚡ Mengunduh video ke server lokal...")
+                st.info("⚡ Mengunduh video ke server (Bypass Cloud Protection)...")
                 
-                user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                
-                # Opsi yt-dlp untuk mendownload langsung ke file lokal di server
+                # Konfigurasi yt-dlp khusus bypass IP Cloud / 403 Forbidden
                 ydl_opts = {
-                    'format': 'best[ext=mp4]/best',
+                    'format': 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
                     'outtmpl': temp_raw_file,
                     'quiet': True,
                     'no_warnings': True,
-                    'user_agent': user_agent,
+                    # Memaksa yt-dlp menyamar sebagai Klien Android/iOS agar lolos dari blokir Cloud
+                    'extractor_args': {
+                        'youtube': {
+                            'player_client': ['android', 'ios', 'web'],
+                            'skip': ['dash', 'hls']
+                        }
+                    },
+                    'http_headers': {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                        'Accept-Language': 'en-us,en;q=0.5',
+                    }
                 }
                 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([url])
 
                 if not os.path.exists(temp_raw_file):
-                    st.error("Gagal mengunduh file video dari URL tersebut.")
+                    st.error("Gagal mengunduh video. YouTube masih memblokir akses dari server ini.")
                 else:
                     st.info("✂️ Memotong video lokal dengan FFmpeg...")
                     
-                    # Potong dari file video yang sudah terunduh di server lokal
                     ffmpeg_cmd = [
                         'ffmpeg',
                         '-y',
@@ -142,6 +150,5 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
             except Exception as e:
                 st.error(f"Terjadi kesalahan: {str(e)}")
             finally:
-                # Bersihkan file video mentah agar memori server hemat
                 if os.path.exists(temp_raw_file):
                     os.remove(temp_raw_file)
