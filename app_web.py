@@ -12,7 +12,7 @@ st.set_page_config(page_title="Auto FYP Clipper AI", page_icon="⚡", layout="ce
 st.title("⚡ Auto FYP Clipper (Powered by Gemini AI)")
 st.write("Masukkan link video TikTok / YouTube untuk dipotong adegan paling viralnya secara otomatis!")
 
-# Mengambil API Key secara aman dari Streamlit Secrets
+# Mengambil API Key dari Streamlit Secrets
 api_key = st.secrets.get("GEMINI_API_KEY")
 
 # Form Input Link & Durasi
@@ -87,11 +87,14 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
                     st.warning("⚠️ Transkrip teks tidak ditemukan pada video ini. Menggunakan pemotongan dari awal video.")
 
                 st.info("⚡ Memproses pengunduhan dan pemotongan video...")
+                
+                user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                
                 ydl_opts = {
                     'format': 'best[ext=mp4]/best',
                     'quiet': True,
                     'no_warnings': True,
-                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'user_agent': user_agent,
                 }
                 
                 direct_url = None
@@ -105,9 +108,11 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
                 if not direct_url:
                     st.error("Gagal mendapatkan link media dari URL yang diberikan.")
                 else:
+                    # Menambahkan -headers User-Agent agar FFmpeg tidak di-block 403 oleh YouTube
                     ffmpeg_cmd = [
                         'ffmpeg',
                         '-y',
+                        '-headers', f'User-Agent: {user_agent}\r\n',
                         '-ss', str(start_time),
                         '-i', direct_url,
                         '-t', str(duration_target),
