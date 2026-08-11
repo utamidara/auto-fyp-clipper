@@ -91,20 +91,22 @@ if st.button("🚀 Analisis AI & Potong Otomatis", use_container_width=True):
                     st.info("📜 Subtitle/Transkrip ditemukan! Gemini AI sedang mencari detik adegan paling seru...")
                 else:
                     content_to_analyze = f"Judul: {title}\nDeskripsi: {description}"
-                    st.warning("⚠️ Transkrip tidak tersedia. Gemini AI menganalisis dari Judul & Deskripsi video...")
+                    st.warning("⚠️ Transkrip tidak tersedia. Menggunakan perkiraan bagian tengah video berdasarkan info judul/deskripsi...")
 
                 prompt = f"""
                 Berikut adalah data video YouTube.
                 Tugasmu adalah menganalisis teks ini dan menentukan 1 adegan paling menarik, memicu rasa penasaran (hook), atau dramatis yang cocok untuk video pendek (TikTok/Reels/Shorts) dengan target durasi sekitar {duration_target} detik.
+                Jika hanya ada Judul dan Deskripsi tanpa transkrip, berikan perkiraan estimasi detik mulai (misalnya detik ke-30 atau ke-60) yang potensial menarik.
 
                 {content_to_analyze}
 
                 Kembalikan HANYA format JSON valid berikut tanpa teks tambahan/markdown lain:
-                {{"start_seconds": 12, "reason": "Penjelasan singkat alasan bagian ini menarik"}}
+                {{"start_seconds": 30, "reason": "Penjelasan singkat alasan bagian ini menarik"}}
                 """
 
+                # Menggunakan nama model resmi: gemini-1.5-flash
                 response = client.models.generate_content(
-                    model='gemini-2.5-flash',
+                    model='gemini-1.5-flash',
                     contents=prompt,
                 )
                 
